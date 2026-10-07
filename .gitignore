@@ -1,0 +1,18 @@
+.env
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+
+# прогоны и кэши агентов (воспроизводимы, в git не нужны)
+out/
+
+# реальные документы клиентов НЕ коммитим (персональные данные, 152-ФЗ)
+cases/*/docs/*
+!cases/*/docs/README.txt
+!cases/demo/docs/*synthetic*
+cases/*/context.local.md

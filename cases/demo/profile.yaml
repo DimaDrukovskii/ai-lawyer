@@ -1,0 +1,8 @@
+# СИНТЕТИЧЕСКИЙ клиент для демонстрации. Реальные данные в cases/ не коммитим (см. .gitignore).
+entity_type: ip                  # ip | ooo
+usn_object: income               # income | income_minus_expenses
+region: Москва
+tax_year: 2025
+has_employees: false
+marketplaces: [wb, ozon]         # wb | ozon | ym
+vat: exempt                      # exempt | payer | unknown

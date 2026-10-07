@@ -1,0 +1,60 @@
+# Правила для детерминированных проверок (src/lawyer/review/checks.py).
+#
+# verified: false — значение взято из знаний автора и ещё НЕ подтверждено research-прогоном.
+#   Проверка, использующая такое правило, добавляет к находке пометку об этом.
+# value: null — значения нет; проверка вернёт «не могу проверить, нужен research», а не молча пройдёт.
+#
+# Порядок работы: после research сверь каждое правило с knowledge/<run>/zones/*.md и поставь
+# verified: true, source, verified_on. Числа, зависящие от года (лимиты, пороги, взносы),
+# заводи по ключу с годом, когда понадобятся несколько лет одновременно.
+
+as_of: null
+rules:
+  usn_rate_income_base:
+    value: 6
+    unit: percent
+    source: "ст. 346.20 НК РФ; региональные и повышенные ставки — проверить research (зона usn-regime-and-limits)"
+    verified: false
+
+  usn_rate_income_minus_expenses_base:
+    value: 15
+    unit: percent
+    source: "ст. 346.20 НК РФ; региональные и повышенные ставки — проверить research"
+    verified: false
+
+  usn_min_tax_percent:
+    value: 1
+    unit: percent
+    source: "ст. 346.18 НК РФ"
+    verified: false
+
+  contrib_deduction_cap_percent_default:
+    value: 50
+    unit: percent
+    source: "ст. 346.21 НК РФ (организации и ИП с работниками)"
+    verified: false
+
+  contrib_deduction_cap_percent_ip_no_employees:
+    value: 100
+    unit: percent
+    source: "ст. 346.21 НК РФ (ИП без работников)"
+    verified: false
+
+  declaration_deadline:
+    value: {ooo: "03-25", ip: "04-25"}  # ММ-ДД года, следующего за налоговым
+    unit: month-day
+    source: "ст. 346.23 НК РФ; перенос на рабочий день — ст. 6.1 НК РФ"
+    verified: false
+
+  # --- значения, которые должен добыть research (проверок на них пока нет) ---
+  income_limit_rub:
+    value: null
+    note: "лимит дохода на год с учётом коэффициента-дефлятора — зона usn-regime-and-limits"
+
+  vat_exemption_threshold_rub:
+    value: null
+    note: "порог дохода для освобождения от НДС на год — зона vat-and-usn-interaction"
+
+  fixed_contributions_ip_rub:
+    value: null
+    note: "фиксированные взносы ИП на год — зона usn-contributions-and-tax-reduction"
