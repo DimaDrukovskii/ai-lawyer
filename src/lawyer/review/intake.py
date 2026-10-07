@@ -2,17 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pydantic import BaseModel
-
 from ..agent import run_agent
 from ..deps import Deps
+from ..schemas import NonEmptyModel
 from ..structured import parse_structured
 from .docs_io import Case, pack
 
 MAX_QUESTIONS = 5
 
 
-class _IntakeOut(BaseModel):
+class _IntakeOut(NonEmptyModel):
     missing: list[str] = []
 
 

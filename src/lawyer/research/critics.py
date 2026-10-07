@@ -46,7 +46,7 @@ async def critique(deps: Deps, lens: str, digest_text: str, ctx: ResearchContext
         system=system,
         user=f"lens: {lens}\n<digest>\n{digest_text}\n</digest>",
         registry=None,  # критики работают по выжимке, без похода в сеть
-        max_tokens=3000,
+        max_tokens=s.max_output_tokens,
     )
     report = await parse_structured(
         deps.provider, model=s.model_fast, model_cls=CriticReport, text=result.text
@@ -54,19 +54,43 @@ async def critique(deps: Deps, lens: str, digest_text: str, ctx: ResearchContext
     return report.model_copy(update={"lens": lens})
 
 
+async def _safe_critique(
+    deps: Deps, lens: str, digest_text: str, ctx: ResearchContext
+) -> CriticReport:
+    try:
+        return await critique(deps, lens, digest_text, ctx)
+    except (
+        Exception
+    ) as exc:  # граница критика: сбой оптики фиксируем как пробел, а не роняем прогон
+        gap = Gap(
+            id="failed",
+            angle=f"критик «{lens}» не отработал ({type(exc).__name__})",
+            question=f"Повторить критику полноты с оптикой «{lens}»",
+            severity=Severity.MEDIUM,
+        )
+        return CriticReport(lens=lens, complete=False, gaps=[gap])
+
+
 async def critique_all(deps: Deps, digest_text: str, ctx: ResearchContext) -> list[CriticReport]:
-    return list(await asyncio.gather(*(critique(deps, lens, digest_text, ctx) for lens in LENSES)))
+    return list(
+        await asyncio.gather(*(_safe_critique(deps, lens, digest_text, ctx) for lens in LENSES))
+    )
 
 
-def actionable_gaps(reports: list[CriticReport], limit: int = 6) -> list[Gap]:
-    """Критические и высокие пробелы без дублей, не больше limit штук."""
+def actionable_gaps(reports: list[CriticReport]) -> list[Gap]:
+    """Все критические и высокие пробелы без дублей, критические первыми.
+
+    Лимит на раунд применяет оркестратор: то, что в него не влезло, должно остаться
+    в открытых пробелах, а не исчезнуть. id — ASCII-счётчик: id от модели бывают
+    кириллическими или пустыми и склеивали бы разные вопросы в один кэш-файл.
+    """
     seen: set[str] = set()
     out: list[Gap] = []
     for report in reports:
-        for gap in report.gaps:
+        for n, gap in enumerate(report.gaps, 1):
             key = gap.question.strip().lower()
             if gap.severity in {Severity.CRITICAL, Severity.HIGH} and key not in seen:
                 seen.add(key)
-                out.append(gap.model_copy(update={"id": f"{report.lens}-{gap.id}"}))
+                out.append(gap.model_copy(update={"id": f"{report.lens}-{n}"}))
     out.sort(key=lambda g: g.severity is not Severity.CRITICAL)
-    return out[:limit]
+    return out

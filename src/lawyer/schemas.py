@@ -6,9 +6,9 @@ import re
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict, model_validator
 
 
 class _Model(BaseModel):
@@ -85,10 +85,12 @@ class VerifiedZone(_Model):
     zone_id: str
     checks: list[ClaimCheck] = []
     note: str = ""
+    # Заполняется кодом из журнала инструментов верификатора; значение от модели затирается
+    fetched_urls: list[str] = []
 
 
 class Gap(_Model):
-    id: str
+    id: str = ""
     angle: str
     question: str
     severity: Severity = Severity.HIGH
@@ -103,7 +105,15 @@ class CriticReport(_Model):
 # ---------------------------------------------------------------- профиль клиента и документы
 
 
+_CURRENCY_TAIL = re.compile(r"(₽|руб\.?|р\.|RUB)\s*$", re.I)
+_MINUS_SIGNS = ("-", "\u2212", "\u2013")  # дефис, математический минус, en dash
+_SPACES = re.compile(r"[\s\u00a0\u202f]")
+
+
 def _to_decimal(v: object) -> Decimal | None:
+    """Строгий разбор суммы. Неоднозначное («1.234,56», «12-34») — ошибка, а не угадывание:
+    молча перевёрнутый знак или сдвинутый порядок числа хуже отказа, потому что эти числа
+    идут в детерминированные проверки."""
     if v is None or isinstance(v, Decimal):
         return v
     if isinstance(v, bool):
@@ -111,10 +121,19 @@ def _to_decimal(v: object) -> Decimal | None:
     if isinstance(v, int | float):
         return Decimal(str(v))
     if isinstance(v, str):
-        s = re.sub(r"[^\d.\-]", "", v.replace(" ", "").replace(" ", "").replace(",", "."))
-        if s in {"", "-", "."}:
+        s = v.strip()
+        if not s:
             return None
-        return Decimal(s)
+        negative = False
+        if s.startswith("(") and s.endswith(")"):  # бухгалтерская запись отрицательного
+            negative, s = True, s[1:-1].strip()
+        if s.startswith(_MINUS_SIGNS):
+            negative, s = True, s[1:]
+        s = _SPACES.sub("", _CURRENCY_TAIL.sub("", s.strip()))
+        if not re.fullmatch(r"\d+(?:[.,]\d+)?", s):
+            raise ValueError(f"неоднозначная сумма: {v!r}")
+        value = Decimal(s.replace(",", "."))
+        return -value if negative else value
     raise ValueError(f"cannot parse money: {v!r}")
 
 
@@ -160,7 +179,18 @@ class Evidence(_Model):
     quote: str
 
 
-class ExtractedDocs(_Model):
+class NonEmptyModel(_Model):
+    """Все поля необязательны, но пустой объект {} — не ответ. Иначе вложенный кусок
+    обрезанного JSON валидируется как «ничего не найдено», и ремонт не запускается."""
+
+    @model_validator(mode="after")
+    def _reject_empty(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("пустой объект: ни одного ожидаемого поля в ответе")
+        return self
+
+
+class ExtractedDocs(NonEmptyModel):
     declaration: UsnFigures | None = None
     kudir: KudirFigures | None = None
     evidence: list[Evidence] = []

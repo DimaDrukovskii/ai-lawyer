@@ -16,7 +16,7 @@ async def extract_figures(deps: Deps, case: Case) -> ExtractedDocs:
         system=deps.prompt("extract"),
         user=pack(case),
         registry=None,
-        max_tokens=3500,
+        max_tokens=s.max_output_tokens,
     )
     extracted = await parse_structured(
         deps.provider, model=s.model_fast, model_cls=ExtractedDocs, text=result.text

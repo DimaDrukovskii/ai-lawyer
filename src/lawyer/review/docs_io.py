@@ -4,9 +4,11 @@ import csv
 import io
 from dataclasses import dataclass
 from pathlib import Path
+from zipfile import BadZipFile
 
 import yaml
 from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
 
@@ -52,7 +54,15 @@ def read_doc(path: Path) -> str:
             return _read_csv(path)
         if suffix in TEXT_SUFFIXES:
             return path.read_text(encoding="utf-8", errors="replace")
-    except (OSError, csv.Error, ValueError, KeyError, PyPdfError) as exc:
+    except (
+        OSError,
+        csv.Error,
+        ValueError,
+        KeyError,
+        PyPdfError,
+        BadZipFile,
+        InvalidFileException,
+    ) as exc:
         raise DocReadError(f"{path.name}: {exc}") from exc
     raise DocReadError(f"{path.name}: неподдерживаемый формат {suffix or '(без расширения)'}")
 
@@ -97,11 +107,18 @@ def load_case(case_dir: Path) -> Case:
     )
 
 
+def _neutralize(text: str) -> str:
+    """Текст документа не должен уметь закрыть наш тег и «выйти» в служебную часть промпта."""
+    return text.replace("</", "<\u200b/")
+
+
 def pack(case: Case) -> str:
     """Один текстовый блок для промптов: профиль, контекст, документы."""
-    docs = "\n\n".join(f"### {name}\n{text[:MAX_DOC_CHARS]}" for name, text in case.docs.items())
+    docs = "\n\n".join(
+        f"### {name}\n{_neutralize(text[:MAX_DOC_CHARS])}" for name, text in case.docs.items()
+    )
     return (
         f"<profile>\n{case.profile.model_dump_json(indent=1)}\n</profile>\n"
-        f"<context>\n{case.context}\n</context>\n"
+        f"<context>\n{_neutralize(case.context)}\n</context>\n"
         f"<documents>\n{docs}\n</documents>"
     )

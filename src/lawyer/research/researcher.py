@@ -59,7 +59,7 @@ async def research_zone(deps: Deps, zone: Zone, ctx: ResearchContext) -> ZoneFin
         user=_user_message(zone),
         registry=deps.registry,
         max_steps=s.max_tool_steps,
-        max_tokens=4000,
+        max_tokens=s.max_output_tokens,
     )
     finding = await parse_structured(
         deps.provider, model=s.model_fast, model_cls=ZoneFinding, text=result.text

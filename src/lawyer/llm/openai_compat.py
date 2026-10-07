@@ -99,12 +99,18 @@ class OpenAICompatProvider:
 
         if not resp.choices:
             raise LLMError("провайдер вернул пустой список choices")
-        msg = resp.choices[0].message
+        choice = resp.choices[0]
+        msg = choice.message
         calls = tuple(
             ToolCall(id=tc.id, name=tc.function.name, arguments=_loads_args(tc.function.arguments))
             for tc in (msg.tool_calls or [])
-            if tc.type == "function"
+            if getattr(tc, "type", None) in (None, "function")  # часть бэкендов не шлёт type
         )
+        if choice.finish_reason == "length" and not calls:
+            # Обрезанный JSON хуже явной ошибки: он молча превращается в «ничего не найдено».
+            raise LLMError(
+                f"ответ обрезан по max_tokens={max_tokens}: увеличь MAX_OUTPUT_TOKENS или сузь задачу"
+            )
         assistant: dict[str, Any] = {"role": "assistant", "content": msg.content or ""}
         if calls:
             assistant["tool_calls"] = [

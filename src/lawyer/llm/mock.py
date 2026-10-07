@@ -12,7 +12,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from .base import LLMResponse, ToolSpec
+from .base import LLMResponse, ToolCall, ToolSpec
 
 Handler = Callable[[str, Sequence[dict[str, Any]]], str]
 
@@ -171,6 +171,16 @@ class MockProvider:
         m = _ROLE.search(system)
         role = m.group(1) if m else "unknown"
         self.calls.append(role)
+        if role == "verifier" and tools and not any(m.get("role") == "tool" for m in messages):
+            # как настоящий верификатор: сначала открыть все процитированные источники
+            urls = list(dict.fromkeys(re.findall(r'"url":\s*"([^"]+)"', _last_user(messages))))
+            calls = tuple(ToolCall(f"mock{i}", "fetch_url", {"url": u}) for i, u in enumerate(urls))
+            if calls:
+                return LLMResponse(
+                    text="",
+                    tool_calls=calls,
+                    assistant_message={"role": "assistant", "content": ""},
+                )
         handler = self._handlers.get(role)
         if handler is None:
             raise KeyError(f"MockProvider: нет обработчика для роли {role!r}")

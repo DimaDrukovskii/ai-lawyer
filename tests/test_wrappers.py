@@ -62,7 +62,17 @@ class TestCli:
         monkeypatch.setenv("LAWYER_HOME", str(root))
 
         assert (
-            main(["--mock", "research", "--zones", "usn-regime-and-limits", "--tax-year", "2026"])
+            main(
+                [
+                    "--mock",
+                    "research",
+                    "--zones",
+                    "usn-regime-and-limits",
+                    "--tax-year",
+                    "2026",
+                    "--promote",
+                ]
+            )
             == 0
         )
         # фейковая база знаний изолирована от настоящей
@@ -125,4 +135,6 @@ class TestApi:
             == 200
         )
         assert not (tmp_path / "escape.txt").exists()
-        assert list((tmp_path / "out" / "api_cases").glob("*/docs/escape.txt"))
+        # документы клиента и результаты не остаются на диске после ответа
+        assert not any((tmp_path / "out" / "api_cases").glob("*"))
+        assert not any((tmp_path / "out" / "review").glob("*"))

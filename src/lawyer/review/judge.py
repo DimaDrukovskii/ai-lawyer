@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
-
 from ..agent import run_agent
 from ..deps import Deps
-from ..research.knowledge import KnowledgeRecord, format_for_prompt
-from ..schemas import ExtractedDocs, Finding
+from ..research.knowledge import KnowledgeRecord, format_for_prompt, select_for_prompt
+from ..schemas import ExtractedDocs, Finding, NonEmptyModel
 from ..structured import parse_structured
 from .docs_io import Case, pack
 
 UNCONFIRMED_PREFIX = "[НЕ ПОДТВЕРЖДЕНО БАЗОЙ] "
 
 
-class _JudgeOut(BaseModel):
+class _JudgeOut(NonEmptyModel):
     findings: list[Finding] = []
 
 
@@ -43,6 +41,9 @@ async def judge(
     checklist: str,
 ) -> list[Finding]:
     s = deps.settings
+    # Если база не влезла в промпт, claim_id из обрезанной части судье недоступны, а значит
+    # и ссылаться на них он не вправе: известными считаем только показанные.
+    shown, _truncated = select_for_prompt(knowledge)
     user = "\n".join(
         [
             pack(case),
@@ -51,7 +52,7 @@ async def judge(
             + "\n".join(f"- [{f.severity.value}] {f.title}: {f.detail}" for f in check_findings)
             + "\n</checks>",
             f"<checklist>\n{checklist}\n</checklist>",
-            f"<knowledge>\n{format_for_prompt(knowledge)}\n</knowledge>",
+            f"<knowledge>\n{format_for_prompt(shown)}\n</knowledge>",
         ]
     )
     result = await run_agent(
@@ -60,9 +61,9 @@ async def judge(
         system=deps.prompt("judge"),
         user=user,
         registry=None,
-        max_tokens=5000,
+        max_tokens=s.max_output_tokens,
     )
     out = await parse_structured(
         deps.provider, model=s.model_fast, model_cls=_JudgeOut, text=result.text
     )
-    return sanitize(out.findings, {r.claim_id for r in knowledge})
+    return sanitize(out.findings, {r.claim_id for r in shown})

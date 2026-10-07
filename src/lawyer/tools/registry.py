@@ -76,6 +76,8 @@ class ToolRegistry:
                 return await self._fetch_url(args)
         except (SearchError, FetchError) as exc:
             return f"ERROR: {exc}"
+        except Exception as exc:  # граница инструмента: аргументы пришли от модели, падать нельзя
+            return f"ERROR: {type(exc).__name__}: {exc}"[:300]
         return f"ERROR: неизвестный инструмент {name!r}"
 
     async def _web_search(self, args: dict[str, Any]) -> str:

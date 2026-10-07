@@ -94,7 +94,7 @@ class TestFetch:
         f = _fetcher(
             lambda r: httpx.Response(200, text=HTML, headers={"content-type": "text/html"})
         )
-        page = await f.fetch("https://www.consultant.ru/doc")
+        page = await f.fetch("https://www.consultant.ru/document/doc")
         assert page.title == "НК РФ"
         assert "Статья 346.21" in page.text
         assert "меню" not in page.text and "x()" not in page.text

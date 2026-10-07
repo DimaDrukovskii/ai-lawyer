@@ -239,6 +239,10 @@ def test_run_checks_sorts_by_severity_and_skips_kudir_when_absent():
     assert any(f.id == "chk-deadline" for f in findings)
 
 
-@pytest.mark.parametrize("extracted", [ExtractedDocs(), ExtractedDocs(kudir=KudirFigures())])
-def test_run_checks_without_declaration_returns_nothing(extracted):
-    assert run_checks(profile(), extracted, RULES) == []
+@pytest.mark.parametrize(
+    "extracted",
+    [ExtractedDocs(declaration=None), ExtractedDocs(kudir=KudirFigures())],
+)
+def test_run_checks_without_declaration_says_so_instead_of_passing(extracted):
+    ids = {f.id for f in run_checks(profile(), extracted, RULES)}
+    assert "chk-coverage-declaration" in ids  # тишина здесь выглядела бы как «ошибок нет»

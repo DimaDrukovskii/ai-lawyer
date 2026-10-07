@@ -57,7 +57,8 @@ class TestTrustRules:
 
     def test_confirmed_with_primary_source_is_trusted(self):
         c = self.claim(sources=[src("https://nalog.gov.ru/x", Tier.PRIMARY)])
-        assert classify_claim(c, self.check(Verdict.CONFIRMED)) is Status.TRUSTED
+        opened = ["https://www.nalog.gov.ru/x/"]  # нормализация: www и слеш не мешают
+        assert classify_claim(c, self.check(Verdict.CONFIRMED), opened) is Status.TRUSTED
 
     def test_confirmed_but_only_blog_source_is_not_trusted(self):
         c = self.claim(sources=[src("https://klerk.ru/x", Tier.LEAD)])
@@ -108,8 +109,8 @@ def test_actionable_gaps_dedup_filter_and_cap():
             Gap(id="g2", angle="c", question="Другой", severity=Severity.CRITICAL),
         ]),
     ]  # fmt: skip
-    gaps = actionable_gaps(reports, limit=2)
-    assert [g.id for g in gaps] == ["calendar-g1", "forensic-g2"] or len(gaps) == 2
+    gaps = actionable_gaps(reports)
+    assert [g.id for g in gaps] == ["forensic-2", "calendar-1"]  # критический первым, id — счётчик
     assert all(g.severity in {Severity.CRITICAL, Severity.HIGH} for g in gaps)
     assert len({g.question.lower() for g in gaps}) == len(gaps)
 
@@ -124,8 +125,8 @@ class TestOrchestrator:
             out_root=tmp_path / "out", knowledge_root=tmp_path / "knowledge", **kw,
         )  # fmt: skip
 
-    async def test_end_to_end_with_mock_writes_knowledge(self, deps, tmp_path):
-        result = await self.run(deps, tmp_path, self.zones(3))
+    async def test_end_to_end_with_mock_writes_knowledge(self, trusting_deps, tmp_path):
+        result = await self.run(trusting_deps, tmp_path, self.zones(3))
 
         assert len(result.findings) == 3 and not result.failed
         kdir = tmp_path / "knowledge" / "t1"
@@ -163,7 +164,7 @@ class TestOrchestrator:
         gaps = json.loads((tmp_path / "knowledge" / "t1" / "gaps.json").read_text())
         assert bad in gaps["failed_zones"]
 
-    async def test_gap_round_researches_critical_gaps(self, settings, tmp_path):
+    async def test_gap_round_researches_critical_gaps(self, settings, fetch_registry, tmp_path):
         def critic(system, messages):
             lens = messages[-1]["content"].split("\n", 1)[0]
             gaps = (
@@ -181,10 +182,10 @@ class TestOrchestrator:
             return json.dumps({"lens": "x", "complete": not gaps, "gaps": gaps}, ensure_ascii=False)
 
         provider = MockProvider({"critic": critic})
-        deps = Deps(provider=provider, settings=settings)
+        deps = Deps(provider=provider, settings=settings, registry=fetch_registry)
         result = await self.run(deps, tmp_path, self.zones(2), rounds=1)
 
-        gap_zone = "gap-r1-calendar-g1"
+        gap_zone = "gap-r1-calendar-1"
         assert gap_zone in result.findings and gap_zone in result.verified
         assert result.open_gaps == []  # закрыт отдельным агентом
         assert provider.calls.count("researcher") == 3  # 2 зоны + 1 дозакрытие

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -29,12 +29,12 @@ class Settings:
     model_strong: str = "aliceai-llm"
     model_fast: str = "aliceai-llm"
 
-    yandex_api_key: str = ""
+    yandex_api_key: str = field(default="", repr=False)
     yandex_folder_id: str = ""
     yandex_base_url: str = "https://ai.api.cloud.yandex.net/v1"
-    yandex_search_api_key: str = ""
+    yandex_search_api_key: str = field(default="", repr=False)
 
-    gigachat_auth_key: str = ""
+    gigachat_auth_key: str = field(default="", repr=False)
     gigachat_scope: str = "GIGACHAT_API_PERS"
     gigachat_base_url: str = "https://gigachat.devices.sberbank.ru/api/v1"
     gigachat_oauth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
@@ -43,6 +43,7 @@ class Settings:
     max_parallel: int = 6
     max_tool_steps: int = 8
     max_claims_per_zone: int = 12
+    max_output_tokens: int = 6000
     allow_unknown_domains: bool = False
 
     @property
@@ -72,5 +73,6 @@ class Settings:
             max_parallel=_int(e, "MAX_PARALLEL", 6),
             max_tool_steps=_int(e, "MAX_TOOL_STEPS", 8),
             max_claims_per_zone=_int(e, "MAX_CLAIMS_PER_ZONE", 12),
+            max_output_tokens=_int(e, "MAX_OUTPUT_TOKENS", 6000),
             allow_unknown_domains=_flag(e, "ALLOW_UNKNOWN_DOMAINS"),
         )

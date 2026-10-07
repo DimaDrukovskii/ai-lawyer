@@ -29,7 +29,7 @@ async def parse_structured(
     """Парсит ответ в модель. Если не вышло — один раз просит быструю модель починить JSON."""
     try:
         return _validate(model_cls, text)
-    except (JsonParseError, ValidationError) as first:
+    except (JsonParseError, ValidationError, ArithmeticError) as first:
         schema = json.dumps(model_cls.model_json_schema(), ensure_ascii=False)
         resp = await provider.chat(
             model=model,

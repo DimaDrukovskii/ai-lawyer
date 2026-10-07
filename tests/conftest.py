@@ -8,7 +8,9 @@ import pytest
 
 from lawyer.config import Settings
 from lawyer.deps import Deps
+from lawyer.llm.base import ToolSpec
 from lawyer.llm.mock import MockProvider
+from lawyer.tools import ToolRegistry
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,6 +28,26 @@ def mock_provider() -> MockProvider:
 @pytest.fixture
 def deps(settings: Settings, mock_provider: MockProvider) -> Deps:
     return Deps(provider=mock_provider, settings=settings, registry=None)
+
+
+class FakeFetchRegistry(ToolRegistry):
+    """Отдаёт любую страницу: нужен, чтобы верификатор в тестах «открывал» источники."""
+
+    def specs(self):
+        return (ToolSpec("fetch_url", "d", {"type": "object", "properties": {}}),)
+
+    async def call(self, name, args):
+        return "PAGE"
+
+
+@pytest.fixture
+def fetch_registry() -> FakeFetchRegistry:
+    return FakeFetchRegistry()
+
+
+@pytest.fixture
+def trusting_deps(settings: Settings, mock_provider: MockProvider) -> Deps:
+    return Deps(provider=mock_provider, settings=settings, registry=FakeFetchRegistry())
 
 
 @pytest.fixture

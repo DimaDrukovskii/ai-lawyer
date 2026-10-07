@@ -13,6 +13,7 @@ from ..schemas import ExtractedDocs, Finding
 from .checks import SEVERITY_ORDER, run_checks
 from .docs_io import Case, load_case
 from .extract import extract_figures
+from .grounding import grounding_findings
 from .intake import collect_answers, find_missing
 from .judge import judge
 from .report import build_parts, render_report
@@ -68,7 +69,10 @@ async def run_review(
 
     # 2. детерминированные проверки (считает код)
     rules = RuleBook.from_yaml(paths.rules_file)
-    check_findings = run_checks(case.profile, extracted, rules, holidays)
+    check_findings = [
+        *run_checks(case.profile, extracted, rules, holidays),
+        *grounding_findings(extracted, case.docs),
+    ]
 
     # 3. судья: то, что код не покрывает, строго на доверенной базе знаний
     knowledge = load_trusted(paths.knowledge_root, knowledge_run)

@@ -27,6 +27,7 @@ from ..schemas import (
     VerifiedZone,
     ZoneFinding,
 )
+from ..tools.domains import normalize_url
 from .zones import ResearchContext, Zone
 
 TRUSTED_TIERS = frozenset({Tier.PRIMARY, Tier.OFFICIAL_TEXT, Tier.MARKETPLACE})
@@ -54,16 +55,32 @@ class KnowledgeRecord(BaseModel):
     as_of: str
 
 
-def classify_claim(claim: Claim, check: ClaimCheck | None) -> Status:
+def classify_claim(
+    claim: Claim, check: ClaimCheck | None, fetched_urls: Iterable[str] = ()
+) -> Status:
+    """Доверие = вердикт confirmed + первоисточник, который верификатор РЕАЛЬНО открыл.
+
+    fetched_urls берётся из журнала инструментов верификатора (код), а не из его ответа:
+    модель не может «подтвердить» источник, к которому не ходила.
+    """
     if check is None or check.verdict is Verdict.UNVERIFIABLE:
         return Status.UNVERIFIED
     if check.verdict is not Verdict.CONFIRMED:
         return Status.REJECTED
     if claim.kind is ClaimKind.OPINION:
         return Status.UNVERIFIED
-    if not any(s.tier in TRUSTED_TIERS for s in claim.sources):
-        return Status.UNVERIFIED  # подтверждено, но без первоисточника — не доверяем
+    opened = {normalize_url(u) for u in fetched_urls}
+    if not any(s.tier in TRUSTED_TIERS and normalize_url(s.url) in opened for s in claim.sources):
+        return Status.UNVERIFIED  # подтверждено, но без открытого первоисточника — не доверяем
     return Status.TRUSTED
+
+
+def has_trusted(finding: ZoneFinding, verified: VerifiedZone) -> bool:
+    checks = {c.claim_id: c for c in verified.checks}
+    return any(
+        classify_claim(c, checks.get(c.id), verified.fetched_urls) is Status.TRUSTED
+        for c in finding.claims
+    )
 
 
 def build_records(
@@ -72,6 +89,7 @@ def build_records(
     records: list[KnowledgeRecord] = []
     for zone_id, finding in findings.items():
         checks = {c.claim_id: c for c in verified[zone_id].checks}
+        fetched = verified[zone_id].fetched_urls
         for claim in finding.claims:
             check = checks.get(claim.id)
             records.append(
@@ -83,7 +101,7 @@ def build_records(
                     condition=claim.condition,
                     numbers=claim.numbers,
                     sources=claim.sources,
-                    status=classify_claim(claim, check),
+                    status=classify_claim(claim, check, fetched),
                     verdict=check.verdict if check else Verdict.UNVERIFIABLE,
                     correction=check.correction if check else "",
                     as_of=as_of.isoformat(),
@@ -147,7 +165,9 @@ def write_knowledge(
     verified: dict[str, VerifiedZone],
     open_gaps: list[Gap],
     failed: dict[str, str],
+    promote: bool = True,
 ) -> Path:
+    """promote=False: прогон сохраняется, но LATEST не трогаем (частичный или с упавшими зонами)."""
     run_dir = knowledge_root / run_id
     (run_dir / "zones").mkdir(parents=True, exist_ok=True)
     records = build_records(findings, verified, ctx.as_of)
@@ -189,8 +209,15 @@ def write_knowledge(
     ]
     if failed:
         index += ["## Не удались", *(f"- `{z}`: {err}" for z, err in failed.items())]
+    if not promote:
+        index.insert(
+            2, "> **Не назначен актуальным (LATEST не изменён):** прогон частичный или с ошибками."
+        )
     (run_dir / "README.md").write_text("\n".join(index) + "\n", encoding="utf-8")
-    (knowledge_root / "LATEST").write_text(run_id + "\n", encoding="utf-8")
+    if promote:
+        tmp = knowledge_root / "LATEST.tmp"
+        tmp.write_text(run_id + "\n", encoding="utf-8")
+        tmp.replace(knowledge_root / "LATEST")  # атомарно: review не увидит полузаписанный файл
     return run_dir
 
 
@@ -213,15 +240,28 @@ def load_trusted(knowledge_root: Path, run_id: str | None = None) -> list[Knowle
     return [r for r in map(KnowledgeRecord.model_validate, raw) if r.status is Status.TRUSTED]
 
 
-def format_for_prompt(records: Iterable[KnowledgeRecord], max_chars: int = 24_000) -> str:
-    lines: list[str] = []
+def _prompt_line(r: KnowledgeRecord) -> str:
+    cond = f" [если: {r.condition}]" if r.condition else ""
+    return f"[{r.claim_id}] {r.text}{cond} (актуально на {r.as_of})"
+
+
+def select_for_prompt(
+    records: Iterable[KnowledgeRecord], max_chars: int = 24_000
+) -> tuple[list[KnowledgeRecord], bool]:
+    """Что поместится в промпт судьи и была ли обрезка. Ссылаться можно только на показанное."""
+    shown: list[KnowledgeRecord] = []
     used = 0
     for r in records:
-        cond = f" [если: {r.condition}]" if r.condition else ""
-        line = f"[{r.claim_id}] {r.text}{cond} (актуально на {r.as_of})"
-        if used + len(line) > max_chars:
-            lines.append("[…база знаний обрезана по лимиту…]")
-            break
-        lines.append(line)
-        used += len(line) + 1
+        used += len(_prompt_line(r)) + 1
+        if used > max_chars:
+            return shown, True
+        shown.append(r)
+    return shown, False
+
+
+def format_for_prompt(records: Iterable[KnowledgeRecord], max_chars: int = 24_000) -> str:
+    shown, truncated = select_for_prompt(records, max_chars)
+    lines = [_prompt_line(r) for r in shown]
+    if truncated:
+        lines.append("[…база знаний обрезана по лимиту…]")
     return "\n".join(lines) or "(доверенных утверждений в базе знаний нет)"

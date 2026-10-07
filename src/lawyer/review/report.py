@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from pydantic import BaseModel
-
 from ..agent import run_agent
 from ..deps import Deps
-from ..schemas import Finding
+from ..schemas import Finding, NonEmptyModel
 from ..structured import parse_structured
 from .checks import SEVERITY_ORDER
 
@@ -17,7 +15,7 @@ DISCLAIMER = (
 )
 
 
-class ReportParts(BaseModel):
+class ReportParts(NonEmptyModel):
     summary: str = ""
     questions_for_accountant: list[str] = []
     next_steps: list[str] = []

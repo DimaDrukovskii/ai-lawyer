@@ -76,15 +76,24 @@ def check_tax_arithmetic(profile: ClientProfile, decl: UsnFigures) -> list[Findi
         if abs(diff) <= TOLERANCE_RUB:
             continue
         under = diff < 0
+        # При «доходы минус расходы» налог ниже расчётного может быть законным: базу уменьшает
+        # убыток прошлых лет, а в извлечённых данных его нет. Это вопрос, а не ошибка.
+        maybe_loss = under and profile.usn_object == "income_minus_expenses"
+        loss_note = (
+            " Если у клиента есть убыток прошлых лет, он уменьшает базу: уточни у бухгалтера."
+            if maybe_loss
+            else ""
+        )
         findings.append(
             Finding(
                 id=f"chk-arith-{period}",
                 title=f"Налог за {_label(period)} посчитан неверно",
-                severity=Severity.HIGH,
+                severity=Severity.MEDIUM if maybe_loss else Severity.HIGH,
+                needs_human=maybe_loss,
                 detail=(
                     f"Исчисленный налог {_fmt(fig.tax_calculated)} ₽, а по базе {_fmt(base)} ₽ "
                     f"и ставке {fig.rate_percent}% получается {_fmt(expected)} ₽ "
-                    f"(разница {_fmt(diff)} ₽)."
+                    f"(разница {_fmt(diff)} ₽)." + loss_note
                 ),
                 price_of_error=(
                     f"Занижение налога на {_fmt(-diff)} ₽ нарастающим итогом: риск доначисления, "
@@ -287,13 +296,57 @@ def check_rate(profile: ClientProfile, decl: UsnFigures, rules: RuleBook) -> lis
 # ---------------------------------------------------------------- сборка
 
 
+def coverage_gaps(extracted: ExtractedDocs) -> list[Finding]:
+    """Проверка, которая не смогла выполниться, обязана об этом сказать.
+
+    Иначе пустое или усечённое извлечение выглядит как «ошибок нет».
+    """
+
+    def gap(id_: str, title: str, detail: str, severity: Severity) -> Finding:
+        return Finding(id=id_, title=title, severity=severity, detail=detail, needs_human=True)
+
+    out: list[Finding] = []
+    decl = extracted.declaration
+    if decl is None:
+        out.append(
+            gap(
+                "chk-coverage-declaration",
+                "Декларация не распознана: расчётные проверки не выполнены",
+                "Из документов не удалось извлечь показатели декларации (нет файла, скан без "
+                "текстового слоя или ответ модели не разобран). Арифметика налога, взносы, "
+                "ставка, срок и сверка с КУДиР НЕ проверялись. Это не означает отсутствие ошибок.",
+                Severity.HIGH,
+            )
+        )
+    elif not decl.periods:
+        out.append(
+            gap(
+                "chk-coverage-periods",
+                "В декларации не извлечено ни одного периода",
+                "Арифметика налога, предел вычета взносов и ставка НЕ проверялись.",
+                Severity.HIGH,
+            )
+        )
+    kudir = extracted.kudir
+    if kudir is None or not (kudir.income or kudir.expenses):
+        out.append(
+            gap(
+                "chk-coverage-kudir",
+                "КУДиР не распознан: сверка с декларацией не выполнена",
+                "Совпадение доходов и расходов КУДиР и декларации НЕ проверялось.",
+                Severity.MEDIUM,
+            )
+        )
+    return out
+
+
 def run_checks(
     profile: ClientProfile,
     extracted: ExtractedDocs,
     rules: RuleBook,
     holidays: frozenset[date] = frozenset(),
 ) -> list[Finding]:
-    findings: list[Finding] = []
+    findings: list[Finding] = coverage_gaps(extracted)
     decl = extracted.declaration
     if decl is not None:
         findings += check_tax_arithmetic(profile, decl)

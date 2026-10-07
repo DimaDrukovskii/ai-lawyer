@@ -34,6 +34,11 @@ def _parser() -> argparse.ArgumentParser:
     r.add_argument("--zones", help="id зон через запятую (по умолчанию все)")
     r.add_argument("--rounds", type=int, default=1, help="раундов критики и дозакрытия")
     r.add_argument("--resume", metavar="RUN_ID", help="продолжить прогон с кэша")
+    r.add_argument(
+        "--promote",
+        action="store_true",
+        help="назначить прогон актуальным (LATEST) даже если зоны выбраны вручную",
+    )
 
     v = sub.add_parser("review", help="проверить документы кейса (декларация УСН + КУДиР)")
     v.add_argument("case", type=Path, help="папка кейса: profile.yaml, context.md, docs/")
@@ -68,6 +73,8 @@ async def _research(args: argparse.Namespace, settings: Settings) -> int:
         out_root=settings.root / "out" / "research",
         knowledge_root=_knowledge_root(settings),
         rounds=args.rounds,
+        # частичный прогон (--zones) не должен подменять полную базу знаний
+        promote=args.promote or not args.zones,
         resume=bool(args.resume),
         emit=print,
     )
